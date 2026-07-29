@@ -1,46 +1,59 @@
-# What is this script?
+# What is this?
 
-It's a tiniest Node.js server that listens to a request to trigger an arbitrary command. It uses built in packages only and requires not even a single package to download!
+The tiniest possible Node.js webhook server. Listens for a signed POST
+and runs an arbitrary shell command. Uses only Node built-ins — zero
+dependencies to install.
 
-This script is written for the purpose to be useful to put up a server that listens to webhook call and trigger the deployment (for example, `docker pull && docker up`) but you can use it for any kind of purpose. :)
+Written for the deploy-hook use case (`git pull && docker compose up -d`
+in response to a push), but the command is arbitrary — anything you'd
+trigger over an authenticated HTTP call works.
 
-# How to use?
+# How to run
 
-3 environment variables used
+Three environment variables:
 
-- COMMAND: Terminal command that you would like to run when the webhook is called.
-- SECRET: Your secret key to validate the request.
-- PORT: (optional) Port number to run the server (defaults to 3002).
+- `COMMAND` — shell command to run when the webhook fires.
+- `SECRET` — bearer token clients must present.
+- `PORT` — optional; port to listen on. Defaults to `3002`.
 
-Run the Node.js server for example:
+Start it:
 
 ```
 COMMAND=<your command> SECRET=<your secret> node index.js
 ```
 
-Trigger the webhook by sending a POST request for example:
+Trigger it:
 
 ```
 curl -X POST localhost:3002 \
-  -H "Authorization: Bearer my-secret" \
+  -H "Authorization: Bearer <your secret>" \
   -H "Content-Type: application/json" \
   -d '{"sha": "abc123"}'
 ```
 
-The `Authorization: Bearer` header is compared with the `SECRET` env var in constant time (`crypto.timingSafeEqual`). The request body is optional and just gets logged alongside the deploy — pass anything useful for auditing (`sha`, `repo`, whatever). Any non-`POST` method returns `405`.
+The `Authorization: Bearer` value is hashed to a 32-byte SHA-256 digest
+and compared to `SECRET`'s digest in constant time
+(`crypto.timingSafeEqual`). The request body is optional — anything you
+send gets JSON-parsed (best effort) and logged with the deploy line, so
+audit fields like `sha` or `repo` survive.
 
 ## Response
 
-The server awaits `COMMAND` to completion and returns the outcome so the caller (e.g. a GitHub Actions job) can fail the run on a broken deploy instead of always seeing `200`.
+The server waits for `COMMAND` to finish and returns the outcome, so
+the caller (e.g. a GitHub Actions job) can fail the run on a broken
+deploy instead of always seeing `200`.
 
 - Success (exit 0): `200` with `{ ok: true, durationMs, stdout_tail, stderr_tail }`.
 - Failure (non-zero exit or killed by signal): `500` with `{ ok: false, exit_code, signal, durationMs, stdout_tail, stderr_tail }`. On a signal kill (including our own timeout SIGKILL), `exit_code` is `null` and `signal` is set — that's how you tell a timeout from a real exit-1.
-- Missing/invalid `Authorization`: `401`, no body; the request is logged (timestamp + remote IP) but no command runs.
+- Missing or invalid `Authorization`: `401`, no body. The request is still logged (timestamp + remote IP) but no command runs.
 - Request body larger than 64 KiB: `413` with `{ ok: false, error: "body too large" }`.
-- Second call arriving while an earlier one is still running: `409` with `{ ok: false, error: "already running" }` — safe to retry after the running one finishes.
+- Second call arriving while an earlier one is still running: `409` with `{ ok: false, error: "already running" }`. Safe to retry once the first one finishes.
 - Wrong method: `405` with `Allow: POST`.
 
-Named constants at the top of `index.js` (`TAIL_MAX`, `BODY_MAX`, `EXEC_MAX_BUFFER`, `DEPLOY_TIMEOUT_MS`) control the caps; edit in one place. Defaults: 2000-char tails, 64 KiB body, 2 MiB child stdio buffer per stream, 10-minute deploy timeout.
+Named constants at the top of `index.js` (`TAIL_MAX`, `BODY_MAX`,
+`EXEC_MAX_BUFFER`, `DEPLOY_TIMEOUT_MS`) control the caps; edit in one
+place. Defaults: 2000-char tails, 64 KiB body, 2 MiB child stdio buffer
+per stream, 10-minute deploy timeout.
 
 # Running under pm2
 
