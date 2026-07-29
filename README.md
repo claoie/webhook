@@ -41,3 +41,55 @@ The server awaits `COMMAND` to completion and returns the outcome so the caller 
 - Wrong method: `405` with `Allow: POST`.
 
 Named constants at the top of `index.js` (`TAIL_MAX`, `BODY_MAX`, `EXEC_MAX_BUFFER`, `DEPLOY_TIMEOUT_MS`) control the caps; edit in one place. Defaults: 2000-char tails, 64 KiB body, 2 MiB child stdio buffer per stream, 10-minute deploy timeout.
+
+# Running under pm2
+
+`ecosystem.config.js` at the repo root registers `index.js` with pm2 so
+the process is supervised, restarts on crash, and survives host reboots
+(if pm2's own systemd unit is installed via `pm2 startup`). Env values
+(`APP_NAME`, `COMMAND`, `SECRET`, `PORT`) are read from the shell at
+startup — no secrets in the repo.
+
+One host can run multiple webhook instances with distinct deploy
+targets by giving each one a distinct `APP_NAME`:
+
+```
+# First-time start (or after `git pull` in an existing checkout)
+APP_NAME=inbox-deploy \
+  COMMAND='cd ~/inbox && git pull && docker compose up -d --build' \
+  SECRET=$INBOX_DEPLOY_SECRET \
+  PORT=3002 \
+  pm2 startOrReload ecosystem.config.js
+
+# Restart in place (picks up new code AND new env)
+APP_NAME=inbox-deploy \
+  COMMAND='...' \
+  SECRET=$INBOX_DEPLOY_SECRET \
+  PORT=3002 \
+  pm2 restart ecosystem.config.js --update-env
+
+# A second, independent instance
+APP_NAME=budget-deploy \
+  COMMAND='cd ~/budget && git pull && docker compose up -d --build' \
+  SECRET=$BUDGET_DEPLOY_SECRET \
+  PORT=3003 \
+  pm2 startOrReload ecosystem.config.js
+```
+
+`APP_NAME` defaults to `webhook` when unset — fine for the single-
+instance case. `PORT` defaults to `3002`.
+
+Everyday commands:
+
+```
+pm2 status                     # list processes
+pm2 logs <APP_NAME>            # tail combined stdout/stderr
+pm2 restart <APP_NAME>         # bounce without re-reading ecosystem
+pm2 stop <APP_NAME>            # stop but keep in the process list
+pm2 delete <APP_NAME>          # remove from the process list
+pm2 save                       # persist the current list so `pm2 resurrect` re-hydrates it after reboot
+```
+
+Use `pm2 restart <name> --update-env` when the env changed (rotated
+secret, new `COMMAND`); a plain `pm2 restart <name>` reuses the env
+pm2 recorded at `startOrReload` time.
