@@ -4,9 +4,9 @@ The tiniest possible Node.js webhook server. Listens for a signed POST
 and runs an arbitrary shell command. Uses only Node built-ins — zero
 dependencies to install.
 
-Written for the deploy-hook use case (`git pull && docker compose up -d`
-in response to a push), but the command is arbitrary — anything you'd
-trigger over an authenticated HTTP call works.
+Use it for anything you'd otherwise SSH in to do: kick off a deploy,
+purge a cache, run a backup, rotate a log, restart a service. The
+command is up to you.
 
 # How to run
 
@@ -34,14 +34,14 @@ curl -X POST localhost:3002 \
 The `Authorization: Bearer` value is hashed to a 32-byte SHA-256 digest
 and compared to `SECRET`'s digest in constant time
 (`crypto.timingSafeEqual`). The request body is optional — anything you
-send gets JSON-parsed (best effort) and logged with the deploy line, so
+send gets JSON-parsed (best effort) and logged with the outcome, so
 audit fields like `sha` or `repo` survive.
 
 ## Response
 
 The server waits for `COMMAND` to finish and returns the outcome, so
 the caller (e.g. a GitHub Actions job) can fail the run on a broken
-deploy instead of always seeing `200`.
+command instead of always seeing `200`.
 
 - Success (exit 0): `200` with `{ ok: true, durationMs, stdout_tail, stderr_tail }`.
 - Failure (non-zero exit or killed by signal): `500` with `{ ok: false, exit_code, signal, durationMs, stdout_tail, stderr_tail }`. On a signal kill (including our own timeout SIGKILL), `exit_code` is `null` and `signal` is set — that's how you tell a timeout from a real exit-1.
@@ -53,7 +53,7 @@ deploy instead of always seeing `200`.
 Named constants at the top of `index.js` (`TAIL_MAX`, `BODY_MAX`,
 `EXEC_MAX_BUFFER`, `DEPLOY_TIMEOUT_MS`) control the caps; edit in one
 place. Defaults: 2000-char tails, 64 KiB body, 2 MiB child stdio buffer
-per stream, 10-minute deploy timeout.
+per stream, 10-minute timeout for `COMMAND`.
 
 # Running under pm2
 
@@ -63,34 +63,35 @@ the process is supervised, restarts on crash, and survives host reboots
 (`APP_NAME`, `COMMAND`, `SECRET`, `PORT`) are read from the shell at
 startup — no secrets in the repo.
 
-One host can run multiple webhook instances with distinct deploy
-targets by giving each one a distinct `APP_NAME`:
+First-time start (or after `git pull` in an existing checkout):
 
 ```
-# First-time start (or after `git pull` in an existing checkout)
-APP_NAME=inbox-deploy \
-  COMMAND='cd ~/inbox && git pull && docker compose up -d --build' \
-  SECRET=$INBOX_DEPLOY_SECRET \
+APP_NAME=<your name> \
+  COMMAND='<your shell command>' \
+  SECRET='<your secret>' \
   PORT=3002 \
   pm2 startOrReload ecosystem.config.js
+```
 
-# Restart in place (picks up new code AND new env)
-APP_NAME=inbox-deploy \
-  COMMAND='...' \
-  SECRET=$INBOX_DEPLOY_SECRET \
+Restart in place, picking up new code AND new env:
+
+```
+APP_NAME=<your name> \
+  COMMAND='<your shell command>' \
+  SECRET='<your secret>' \
   PORT=3002 \
   pm2 restart ecosystem.config.js --update-env
-
-# A second, independent instance
-APP_NAME=budget-deploy \
-  COMMAND='cd ~/budget && git pull && docker compose up -d --build' \
-  SECRET=$BUDGET_DEPLOY_SECRET \
-  PORT=3003 \
-  pm2 startOrReload ecosystem.config.js
 ```
 
-`APP_NAME` defaults to `webhook` when unset — fine for the single-
-instance case. `PORT` defaults to `3002`.
+Notes:
+
+- `COMMAND` runs in a shell in pm2's working directory. If your command
+  needs a specific cwd (e.g. it references files by relative path), set
+  the pm2 process's `cwd` in `ecosystem.config.js`, or prefix `COMMAND`
+  with `cd /path/to/dir &&`.
+- `APP_NAME` names the pm2 process handle used by `pm2 restart` /
+  `pm2 logs`. Defaults to `webhook`. Give each instance a distinct
+  `APP_NAME` + `PORT` if you want to run several webhooks on one host.
 
 Everyday commands:
 
