@@ -63,34 +63,37 @@ the process is supervised, restarts on crash, and survives host reboots
 (`APP_NAME`, `COMMAND`, `SECRET`, `PORT`) are read from the shell at
 startup — no secrets in the repo.
 
-One host can run multiple webhook instances with distinct deploy
-targets by giving each one a distinct `APP_NAME`:
+`COMMAND` is a shell string, so a typical deploy command reads a
+`docker-compose.yml` sitting next to it on the host (image tags getting
+repushed by the upstream CI is what actually rolls new code):
 
 ```
 # First-time start (or after `git pull` in an existing checkout)
-APP_NAME=inbox-deploy \
-  COMMAND='cd ~/inbox && git pull && docker compose up -d --build' \
-  SECRET=$INBOX_DEPLOY_SECRET \
+APP_NAME=deploy \
+  COMMAND='sudo docker compose pull && sudo docker compose up -d && sudo docker system prune -a -f' \
+  SECRET=$DEPLOY_SECRET \
   PORT=3002 \
   pm2 startOrReload ecosystem.config.js
 
 # Restart in place (picks up new code AND new env)
-APP_NAME=inbox-deploy \
+APP_NAME=deploy \
   COMMAND='...' \
-  SECRET=$INBOX_DEPLOY_SECRET \
+  SECRET=$DEPLOY_SECRET \
   PORT=3002 \
   pm2 restart ecosystem.config.js --update-env
-
-# A second, independent instance
-APP_NAME=budget-deploy \
-  COMMAND='cd ~/budget && git pull && docker compose up -d --build' \
-  SECRET=$BUDGET_DEPLOY_SECRET \
-  PORT=3003 \
-  pm2 startOrReload ecosystem.config.js
 ```
 
-`APP_NAME` defaults to `webhook` when unset — fine for the single-
-instance case. `PORT` defaults to `3002`.
+Two things worth noting for that example:
+
+- The `docker-compose.yml` and its `.env` live on the host, adjacent to
+  wherever pm2 runs the process — the webhook doesn't ship or clone
+  them. Set the pm2 process's `cwd` (or `cd` at the start of `COMMAND`)
+  to the directory that holds compose.
+- One host can run multiple webhook instances by giving each a distinct
+  `APP_NAME` + `PORT` (e.g. `APP_NAME=inbox-deploy PORT=3002` alongside
+  `APP_NAME=budget-deploy PORT=3003`). `APP_NAME` defaults to `webhook`
+  when unset — fine for the single-instance case. `PORT` defaults to
+  `3002`.
 
 Everyday commands:
 
