@@ -40,8 +40,8 @@ audit fields like `sha` or `repo` survive.
 ## Response
 
 The server waits for `COMMAND` to finish and returns the outcome, so
-the caller (e.g. a GitHub Actions job) can fail the run on a broken
-command instead of always seeing `200`.
+the caller can fail on a broken command instead of always seeing
+`200`.
 
 - Success (exit 0): `200` with `{ ok: true, durationMs, stdout_tail, stderr_tail }`.
 - Failure (non-zero exit or killed by signal): `500` with `{ ok: false, exit_code, signal, durationMs, stdout_tail, stderr_tail }`. On a signal kill (including our own timeout SIGKILL), `exit_code` is `null` and `signal` is set — that's how you tell a timeout from a real exit-1.

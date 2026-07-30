@@ -26,10 +26,10 @@ const COMMAND_TIMEOUT_MS = 10 * 60 * 1000; // hard kill so a hung COMMAND
 // bump if COMMAND legitimately takes longer.
 
 // Serialize invocations. A concurrent second POST would race COMMAND
-// against itself (git pull + docker compose up -d don't lock each
-// other). Return 409 and let the caller retry — GitHub Actions'
-// `concurrency.group` upstream already queues, so this is a
-// belt-and-suspenders guard.
+// against itself (COMMANDs like `git pull && docker compose up -d`
+// don't lock each other). Return 409 and let the caller retry — if
+// the caller already queues its own invocations, this is a
+// belt-and-suspenders guard; if it doesn't, this IS the serialization.
 let isRunning = false;
 
 function isAuthorized(req) {
@@ -135,7 +135,7 @@ http
       // `error.code` is a number on normal non-zero exit; `null` when
       // the child was killed by a signal (our timeout SIGKILL, or an
       // external kill). `signal` differentiates the two so the caller
-      // (e.g. GH Actions retry logic) can tell timeout from exit-1.
+      // can tell a timeout from a real exit-1 (useful for retry logic).
       const exit_code = typeof error.code === "number" ? error.code : null;
       const signal = error.signal || null;
       const stderr_tail = String(error.stderr || error.message || "").slice(-TAIL_MAX);
