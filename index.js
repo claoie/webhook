@@ -20,10 +20,10 @@ const SECRET_HASH = createHash("sha256").update(SECRET).digest();
 const TAIL_MAX = 2000; // stdout/stderr characters surfaced per response
 const BODY_MAX = 64 * 1024; // request body bytes accepted
 const EXEC_MAX_BUFFER = 2 * 1024 * 1024; // child stdio buffer per stream
-const DEPLOY_TIMEOUT_MS = 10 * 60 * 1000; // hard kill so a hung COMMAND
+const COMMAND_TIMEOUT_MS = 10 * 60 * 1000; // hard kill so a hung COMMAND
 // can't wedge `isRunning=true` forever and permanently 409 subsequent
 // requests. 10 min covers realistic docker-compose pull+up windows;
-// bump if the deploy legitimately takes longer.
+// bump if COMMAND legitimately takes longer.
 
 // Serialize invocations. A concurrent second POST would race COMMAND
 // against itself (git pull + docker compose up -d don't lock each
@@ -106,19 +106,19 @@ http
         /* non-JSON body is fine — leave `body` null */
       }
 
-      // Capture stdout + stderr so the HTTP response can surface why a
-      // deploy failed to the caller (GitHub Actions), instead of always
-      // returning 200 fire-and-forget. `timeout + SIGKILL` protects
-      // against a wedged COMMAND holding the guard forever.
+      // Capture stdout + stderr so the HTTP response can surface why
+      // COMMAND failed to the caller, instead of always returning 200
+      // fire-and-forget. `timeout + SIGKILL` protects against a wedged
+      // COMMAND holding the guard forever.
       const { stdout, stderr } = await execAsync(COMMAND, {
         maxBuffer: EXEC_MAX_BUFFER,
-        timeout: DEPLOY_TIMEOUT_MS,
+        timeout: COMMAND_TIMEOUT_MS,
         killSignal: "SIGKILL",
       });
       const durationMs = Date.now() - startedAt;
       console.log(
         new Date().toISOString(),
-        "deploy OK",
+        "command OK",
         JSON.stringify({ durationMs, body }),
       );
       res.writeHead(200, { "Content-Type": "application/json" });
@@ -142,7 +142,7 @@ http
       const stdout_tail = String(error.stdout || "").slice(-TAIL_MAX);
       console.error(
         new Date().toISOString(),
-        "deploy FAILED",
+        "command FAILED",
         JSON.stringify({ durationMs, exit_code, signal, stderr_tail }),
       );
       res.writeHead(500, { "Content-Type": "application/json" });

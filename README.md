@@ -51,7 +51,7 @@ command instead of always seeing `200`.
 - Wrong method: `405` with `Allow: POST`.
 
 Named constants at the top of `index.js` (`TAIL_MAX`, `BODY_MAX`,
-`EXEC_MAX_BUFFER`, `DEPLOY_TIMEOUT_MS`) control the caps; edit in one
+`EXEC_MAX_BUFFER`, `COMMAND_TIMEOUT_MS`) control the caps; edit in one
 place. Defaults: 2000-char tails, 64 KiB body, 2 MiB child stdio buffer
 per stream, 10-minute timeout for `COMMAND`.
 
